@@ -1,3 +1,5 @@
+package com.blog.model;
+
 public class AdminUser extends User {
     public AdminUser(String username) {
         super(username, "ADMIN");

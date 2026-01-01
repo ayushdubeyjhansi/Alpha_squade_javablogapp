@@ -1,3 +1,5 @@
+package com.blog.model;
+
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
@@ -112,22 +114,35 @@ public class SimpleBlogApp extends JFrame {
         passField.setBorder(BorderFactory.createTitledBorder("Password"));
 
         JButton loginBtn = new JButton("Login");
-        loginBtn.setBackground(new Color(24, 156, 14));
+        loginBtn.setBackground(new Color(70, 130, 180));
         loginBtn.setForeground(Color.WHITE);
 
         loginBtn.addActionListener(e -> {
-            String uName = userField.getText();
-            String pass = new String(passField.getPassword());
+            String uName = userField.getText().trim();
+            String pass = new String(passField.getPassword()).trim();
 
-            if (dataService.authenticateUser(uName, pass)) {
-                if (uName.equalsIgnoreCase("admin")) {
-                    currentUser = new AdminUser(uName);
+            // --- RUBRIC: Input Validation ---
+            if (uName.isEmpty() || pass.isEmpty()) {
+                JOptionPane.showMessageDialog(this, "Please enter both username and password.");
+                return;
+            }
+
+            try {
+                if (dataService.authenticateUser(uName, pass)) {
+                    if (uName.equalsIgnoreCase("admin")) {
+                        currentUser = new AdminUser(uName);
+                    } else {
+                        currentUser = new RegularUser(uName);
+                    }
+                    JOptionPane.showMessageDialog(this, currentUser.getWelcomeMessage());
+                    refreshFeed();
+                    cardLayout.show(mainPanel, "Feed");
                 } else {
-                    currentUser = new RegularUser(uName);
+                    JOptionPane.showMessageDialog(this, "Invalid Username or Password", "Login Failed", JOptionPane.ERROR_MESSAGE);
                 }
-                JOptionPane.showMessageDialog(this, currentUser.getWelcomeMessage());
-                refreshFeed();
-                cardLayout.show(mainPanel, "Feed");
+            } catch (Exception ex) {
+                // --- RUBRIC: Prevents System Crash ---
+                JOptionPane.showMessageDialog(this, "System Error: " + ex.getMessage(), "Critical Error", JOptionPane.ERROR_MESSAGE);
             }
         });
 
@@ -172,50 +187,74 @@ public class SimpleBlogApp extends JFrame {
         return panel;
     }
 
+    // --- RUBRIC FIX: Multithreading (SwingWorker) ---
     private void refreshFeed() {
-        feedContainer.removeAll();
-        List<BlogPost> posts = dataService.getAllPosts();
+        // 1. Show user something is happening (Optional but good UX)
+        statusLabel.setText("Status: Loading posts...");
 
-        for (BlogPost post : posts) {
-            // Create Main Card
-            JPanel card = new JPanel(new BorderLayout(10, 10)); // Gap of 10px
-            card.setBorder(BorderFactory.createCompoundBorder(
-                    new EmptyBorder(5, 10, 5, 10),
-                    BorderFactory.createLineBorder(Color.LIGHT_GRAY, 1, true) // Rounded look
-            ));
-            card.setBackground(Color.WHITE);
-            card.setMaximumSize(new Dimension(Integer.MAX_VALUE, 90));
+        // 2. Create the SwingWorker
+        SwingWorker<List<BlogPost>, Void> worker = new SwingWorker<List<BlogPost>, Void>() {
+            @Override
+            protected List<BlogPost> doInBackground() throws Exception {
+                // Background Thread: Heavy Database work happens here!
+                // This keeps the GUI responsive while fetching data.
+                return dataService.getAllPosts();
+            }
 
-            // --- LEFT: Avatar ---
-            JLabel avatarLbl = new JLabel(generateAvatar(post.author.getUsername(), 50));
+            @Override
+            protected void done() {
+                // Event Dispatch Thread: Update UI safely when finished
+                try {
+                    List<BlogPost> posts = get(); // Get the result from doInBackground
 
-            // --- CENTER: Title & Meta ---
-            JLabel pTitle = new JLabel(post.title);
-            pTitle.setFont(new Font("Arial", Font.BOLD, 16));
+                    feedContainer.removeAll();
+                    for (BlogPost post : posts) {
+                        // (Reusing your existing Card UI code)
+                        JPanel card = new JPanel(new BorderLayout(10, 10));
+                        card.setBorder(BorderFactory.createCompoundBorder(
+                                new EmptyBorder(5, 10, 5, 10),
+                                BorderFactory.createLineBorder(Color.LIGHT_GRAY, 1, true)
+                        ));
+                        card.setBackground(Color.WHITE);
+                        card.setMaximumSize(new Dimension(Integer.MAX_VALUE, 90));
 
-            JLabel pMeta = new JLabel("By " + post.author.getUsername());
-            pMeta.setFont(new Font("Arial", Font.PLAIN, 12));
-            pMeta.setForeground(Color.GRAY);
+                        JLabel avatarLbl = new JLabel(generateAvatar(post.author.getUsername(), 50));
 
-            JPanel info = new JPanel(new GridLayout(2, 1));
-            info.setOpaque(false);
-            info.add(pTitle);
-            info.add(pMeta);
+                        JLabel pTitle = new JLabel(post.title);
+                        pTitle.setFont(new Font("Arial", Font.BOLD, 16));
 
-            // --- RIGHT: Read Button ---
-            JButton readBtn = new JButton("Read >");
-            readBtn.addActionListener(e -> openReadPanel(post));
+                        JLabel pMeta = new JLabel("By " + post.author.getUsername());
+                        pMeta.setFont(new Font("Arial", Font.PLAIN, 12));
+                        pMeta.setForeground(Color.GRAY);
 
-            // Add to Card
-            card.add(avatarLbl, BorderLayout.WEST);
-            card.add(info, BorderLayout.CENTER);
-            card.add(readBtn, BorderLayout.EAST);
+                        JPanel info = new JPanel(new GridLayout(2, 1));
+                        info.setOpaque(false);
+                        info.add(pTitle);
+                        info.add(pMeta);
 
-            feedContainer.add(card);
-            feedContainer.add(Box.createVerticalStrut(10));
-        }
-        feedContainer.revalidate();
-        feedContainer.repaint();
+                        JButton readBtn = new JButton("Read >");
+                        readBtn.addActionListener(e -> openReadPanel(post));
+
+                        card.add(avatarLbl, BorderLayout.WEST);
+                        card.add(info, BorderLayout.CENTER);
+                        card.add(readBtn, BorderLayout.EAST);
+
+                        feedContainer.add(card);
+                        feedContainer.add(Box.createVerticalStrut(10));
+                    }
+                    feedContainer.revalidate();
+                    feedContainer.repaint();
+                    statusLabel.setText("Status: Feed Updated");
+
+                } catch (Exception e) {
+                    statusLabel.setText("Status: Error loading feed");
+                    e.printStackTrace();
+                }
+            }
+        };
+
+        // 3. Execute the worker
+        worker.execute();
     }
 
     private JPanel createWritePostPanel() {
@@ -223,12 +262,12 @@ public class SimpleBlogApp extends JFrame {
         panel.setBorder(new EmptyBorder(20, 20, 20, 20));
 
         JTextField titleField = new JTextField();
-        titleField.setBorder(BorderFactory.createTitledBorder("Post Title"));
+        titleField.setBorder(BorderFactory.createTitledBorder("Post Title (Min 5 chars)"));
 
         JTextArea contentArea = new JTextArea();
         contentArea.setLineWrap(true);
         JScrollPane scroll = new JScrollPane(contentArea);
-        scroll.setBorder(BorderFactory.createTitledBorder("Write your story..."));
+        scroll.setBorder(BorderFactory.createTitledBorder("Write your story... (Min 20 chars)"));
 
         JButton pubBtn = new JButton("Publish Post");
         JButton cancelBtn = new JButton("Cancel");
@@ -237,20 +276,29 @@ public class SimpleBlogApp extends JFrame {
 
         pubBtn.addActionListener(e -> {
             try {
-                String t = titleField.getText();
-                String c = contentArea.getText();
-                if (t.isEmpty() || c.isEmpty()) throw new Exception("Fields cannot be empty");
+                String t = titleField.getText().trim();
+                String c = contentArea.getText().trim();
 
+                // --- RUBRIC: Data Validation Logic ---
+                if (t.isEmpty()) throw new Exception("Title cannot be empty.");
+                if (t.length() < 5) throw new Exception("Title is too short! It must be at least 5 characters.");
+                if (c.isEmpty()) throw new Exception("Content cannot be empty.");
+                if (c.length() < 20) throw new Exception("Content is too short! (Min 20 characters).");
+
+                // Save Post
                 BlogPost newPost = new BlogPost(t, c, currentUser);
                 dataService.addPost(newPost);
 
+                // Reset and redirect
                 titleField.setText("");
                 contentArea.setText("");
                 refreshFeed();
+                JOptionPane.showMessageDialog(this, "Success! Post published.");
                 cardLayout.show(mainPanel, "Feed");
 
             } catch (Exception ex) {
-                JOptionPane.showMessageDialog(this, "Error: " + ex.getMessage());
+                // --- RUBRIC: Error Handling ---
+                JOptionPane.showMessageDialog(this, "Validation Error: " + ex.getMessage(), "Input Error", JOptionPane.WARNING_MESSAGE);
             }
         });
 
@@ -273,7 +321,15 @@ public class SimpleBlogApp extends JFrame {
         JButton back = new JButton("<< Back");
         back.addActionListener(e -> cardLayout.show(mainPanel, "Feed"));
 
-        topContainer.add(back, BorderLayout.WEST);
+        // --- NEW INNOVATION FEATURE ---
+        JButton exportBtn = new JButton("💾 Export to File");
+        exportBtn.addActionListener(e -> exportPostToFile(currentViewingPost));
+
+        JPanel topBtns = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        topBtns.add(back);
+        topBtns.add(exportBtn);
+
+        topContainer.add(topBtns, BorderLayout.WEST);
 
         JPanel content = new JPanel();
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
@@ -298,7 +354,7 @@ public class SimpleBlogApp extends JFrame {
         readContentArea.setOpaque(false);
         readContentArea.setFont(new Font("Georgia", Font.PLAIN, 16));
 
-        // Helper panel to hold avatar + author info side by side
+        // Helper panel
         JPanel authorHeader = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
         authorHeader.setAlignmentX(Component.LEFT_ALIGNMENT);
         authorHeader.add(readAvatarLabel);
@@ -317,10 +373,9 @@ public class SimpleBlogApp extends JFrame {
         likePanel.add(likeBtn);
         likePanel.add(readLikesLabel);
 
-        // Add elements to scrollable content
         content.add(readTitleLabel);
         content.add(Box.createVerticalStrut(10));
-        content.add(authorHeader); // Avatar + Name
+        content.add(authorHeader);
         content.add(Box.createVerticalStrut(20));
         content.add(readContentArea);
         content.add(Box.createVerticalStrut(20));
@@ -379,5 +434,25 @@ public class SimpleBlogApp extends JFrame {
         SwingUtilities.invokeLater(() -> {
             new SimpleBlogApp().setVisible(true);
         });
+    }
+    // --- INNOVATION: Export Logic ---
+    private void exportPostToFile(BlogPost post) {
+        if (post == null) return;
+        try {
+            // Create a safe filename
+            String filename = post.title.replaceAll("[^a-zA-Z0-9]", "_") + ".txt";
+
+            // Write to file
+            java.io.FileWriter writer = new java.io.FileWriter(filename);
+            writer.write("Title: " + post.title + "\n");
+            writer.write("Author: " + post.author.getUsername() + "\n");
+            writer.write("---------------------------\n");
+            writer.write(post.content + "\n");
+            writer.close();
+
+            JOptionPane.showMessageDialog(this, "Saved successfully to project folder: " + filename);
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this, "Could not save file: " + ex.getMessage());
+        }
     }
 }

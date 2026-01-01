@@ -1,3 +1,5 @@
+package com.blog.model;
+
 public abstract class User {
     protected String username;
     protected String role;

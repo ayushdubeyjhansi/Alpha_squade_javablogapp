@@ -1,3 +1,5 @@
+package com.blog.model;
+
 import java.util.List;
 
 public interface IDataService {
